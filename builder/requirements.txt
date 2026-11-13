@@ -1,0 +1,11 @@
+# python-for-android requirements for GPS Bridge.
+#
+# This file is the single source of truth for the app's Python dependencies.
+# builder/build_apk_docker.sh reads it and passes the list to p4a's
+# --requirements flag. One dependency per line; # comments and blank lines
+# are ignored. The pinned python3/hostpython3 versions are added by the build
+# script itself (they are build config, not app dependencies).
+#
+# Note: pyjnius is included automatically with Kivy.
+kivy
+pynmea2
