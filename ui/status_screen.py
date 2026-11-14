@@ -21,8 +21,22 @@ STATUS_FILE = os.environ.get(
     "GPS_STATUS_FILE",
     "/data/data/org.gnssbridge.app/files/gps_status.json",
 )
+# The UI writes the requested constellation here (the service polls it).
+COMMAND_FILE = os.environ.get(
+    "GPS_COMMAND_FILE",
+    "/data/data/org.gnssbridge.app/files/gps_command.txt",
+)
+# The service writes the current selection here (the UI reads it).
+SELECTION_FILE = os.environ.get(
+    "GPS_SELECTION_FILE",
+    "/data/data/org.gnssbridge.app/files/gps_selection.txt",
+)
 # How often (seconds) to poll the status file.
 POLL_INTERVAL = 1.0
+
+# Colors for the constellation selection buttons.
+COLOR_SELECTED = [0.13, 0.55, 0.13, 1]    # green
+COLOR_UNSELECTED = [0.22, 0.22, 0.22, 1]  # gray
 
 
 class StatusScreen(BoxLayout):
@@ -56,6 +70,25 @@ class StatusScreen(BoxLayout):
         # --- Spacer ---
         spacer = BoxLayout(size_hint_y=0.1)
         self.add_widget(spacer)
+
+        # --- Constellation selection (GPS / GLONASS) ---
+        self.const_label = Label(
+            text="Constelación (NEO-7M: una banda a la vez)", font_size=14)
+        self.const_label.halign = "center"
+        self.add_widget(self.const_label)
+
+        const_box = BoxLayout(orientation="horizontal", spacing=10)
+        self.gps_btn = Button(text="GPS", font_size=18)
+        self.gps_btn.bind(on_press=self._on_constellation)
+        const_box.add_widget(self.gps_btn)
+        self.glo_btn = Button(text="GLONASS", font_size=18)
+        self.glo_btn.bind(on_press=self._on_constellation)
+        const_box.add_widget(self.glo_btn)
+        self.add_widget(const_box)
+
+        # Restore the last constellation selection (default GPS).
+        self._current_constellation = self._read_selection()
+        self._set_selection(self._current_constellation)
 
         # --- Buttons ---
         self.start_btn = Button(text="Iniciar servicio", font_size=18)
@@ -137,6 +170,53 @@ class StatusScreen(BoxLayout):
         except Exception:
             log.exception("Error stopping service")
             self.bt_label.text = "BT: error al detener"
+
+    def _on_constellation(self, instance):
+        """Handle a constellation button press: request the switch.
+
+        Writes the requested constellation to the command file (the service
+        polls it and sends the UBX-CFG-GNSS command over BLE) and highlights the
+        button optimistically. If the BLE write fails, the log shows
+        ``Sent UBX-CFG-GNSS for ...: FAILED`` and the selection file is left
+        unchanged (so the next restart restores the last *successful* choice).
+        """
+        constellation = "GPS" if instance is self.gps_btn else "GLONASS"
+        log.info("User selected constellation: %s", constellation)
+        try:
+            directory = os.path.dirname(COMMAND_FILE)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(COMMAND_FILE, "w") as f:
+                f.write(constellation)
+        except Exception:
+            log.exception("Error writing command file")
+            return
+        self._current_constellation = constellation
+        self._set_selection(constellation)
+
+    def _set_selection(self, constellation):
+        """Highlight the selected constellation button (green) and dim the
+        other (gray)."""
+        if constellation == "GPS":
+            self.gps_btn.background_color = COLOR_SELECTED
+            self.glo_btn.background_color = COLOR_UNSELECTED
+        else:
+            self.glo_btn.background_color = COLOR_SELECTED
+            self.gps_btn.background_color = COLOR_UNSELECTED
+
+    def _read_selection(self) -> str:
+        """Read the current constellation from the selection file.
+
+        Falls back to GPS if the file is missing or invalid.
+        """
+        try:
+            with open(SELECTION_FILE) as f:
+                value = f.read().strip().upper()
+            if value in ("GPS", "GLONASS"):
+                return value
+        except (FileNotFoundError, OSError):
+            pass
+        return "GPS"
 
     def on_pre_unwind(self):
         """Clean up the clock event when the widget is destroyed."""

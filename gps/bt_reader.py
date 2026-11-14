@@ -327,6 +327,27 @@ class BtSppReader:
         self._thread = None
 
     # ------------------------------------------------------------------
+    # Writing
+    # ------------------------------------------------------------------
+    def write(self, data: bytes) -> bool:
+        """Write bytes to the JDY-18 RX characteristic (0000ffe2).
+
+        The bytes are forwarded to the NEO-7M's UART TX (e.g. a UBX-CFG-GNSS
+        command to switch constellation). Returns True if the write was queued
+        on the GATT connection, False otherwise (not connected, characteristic
+        not found, or a JNI error).
+        """
+        if self._gatt_callback is None:
+            log.warning("write() called but no GATT connection is available")
+            return False
+        try:
+            # Python bytearray is auto-converted to Java byte[] by pyjnius.
+            return bool(self._gatt_callback.write(bytearray(data)))
+        except Exception:
+            log.exception("BLE write failed")
+            return False
+
+    # ------------------------------------------------------------------
     # GATT helpers
     # ------------------------------------------------------------------
     def _find_serial_characteristic(self, gatt):
